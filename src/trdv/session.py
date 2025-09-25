@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import aiohttp
 from yarl import URL
@@ -40,7 +39,7 @@ class Session:
         return self._authenticated
 
     @property
-    def user(self) -> Optional[UserModel]:
+    def user(self) -> UserModel | None:
         """Returns the user information if available."""
         return self._user
 
@@ -71,51 +70,45 @@ class Session:
             "remember": True,
         }
 
-        try:
-            async with aiohttp.ClientSession(cookie_jar=self._cookie_jar) as session:
-                async with session.post(
-                    sign_in_url, data=payload, headers=self._headers
-                ) as resp:
-                    if resp.content_type == "application/json":
-                        data = await resp.json()
-                    else:
-                        if 400 <= resp.status < 600:
-                            raise AuthenticationError(
-                                f"Login failed with HTTP status {resp.status}."
-                            )
-                        data = {}
-                    logger.debug(f"Login response data: {data}")
-
-                    if data.get("code") == "recaptcha_required":
-                        logger.warning(
-                            "CAPTCHA challenge detected. Directing user to manual login."
+        async with aiohttp.ClientSession(cookie_jar=self._cookie_jar) as session:
+            async with session.post(
+                sign_in_url, data=payload, headers=self._headers
+            ) as resp:
+                if resp.content_type == "application/json":
+                    data = await resp.json()
+                else:
+                    if 400 <= resp.status < 600:
+                        raise AuthenticationError(
+                            f"Login failed with HTTP status {resp.status}."
                         )
-                        raise CaptchaRequired(
-                            "CAPTCHA challenge detected. Please solve it in your browser.",
-                            url=sign_in_url,
-                        )
+                    data = {}
+                logger.debug(f"Login response data: {data}")
 
-                    if resp.status == 200 and data.get("user"):
-                        try:
-                            self.user = UserModel.model_validate(data["user"])
-                            self._authenticated = True
-                            logger.info("Login successful")
-                            return
-                        except ValidationError as e:
-                            logger.error(
-                                f"Failed to parse user data from API response: {e}"
-                            )
-                            raise AuthenticationError(
-                                "Login failed: Invalid user data received from API."
-                            ) from e
-
-                    error_message = data.get(
-                        "error", "Login failed for an unknown reason."
+                if data.get("code") == "recaptcha_required":
+                    logger.warning(
+                        "CAPTCHA challenge detected. Directing user to manual login."
                     )
-                    raise AuthenticationError(error_message)
-        finally:
-            self.__password = None
-            logger.debug("Password has been cleared from session memory.")
+                    raise CaptchaRequired(
+                        "CAPTCHA challenge detected. Please solve it in your browser.",
+                        url=sign_in_url,
+                    )
+
+                if resp.status == 200 and data.get("user"):
+                    try:
+                        self.user = UserModel.model_validate(data["user"])
+                        self._authenticated = True
+                        logger.info("Login successful")
+                        return
+                    except ValidationError as e:
+                        logger.error(
+                            f"Failed to parse user data from API response: {e}"
+                        )
+                        raise AuthenticationError(
+                            "Login failed: Invalid user data received from API."
+                        ) from e
+
+                error_message = data.get("error", "Login failed for an unknown reason.")
+                raise AuthenticationError(error_message)
 
     def set_auth_cookies(self, sessionid: str, session_signature: str):
         """Manually sets the necessary authentication cookies after a browser login."""

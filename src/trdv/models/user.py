@@ -1,4 +1,3 @@
-from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -21,7 +20,7 @@ class UserModel(BaseModel):
     is_symphony: bool
     is_active_partner: bool
     is_broker: bool
-    broker_plan: Optional[str] = None
+    broker_plan: str | None = None
     badges: list
     permissions: dict
     is_staff: bool
