@@ -1,3 +1,7 @@
+TRADINGVIEW_BASE_URL = "https://www.tradingview.com"
+TRADINGVIEW_LOGIN_URL = f"{TRADINGVIEW_BASE_URL}/accounts/signin/"
+TRADINGVIEW_DATA_URL = "https://data.tradingview.com"
+TRADINGVIEW_CHART_URL = f"{TRADINGVIEW_BASE_URL}/chart/"
 USER_AGENTS = {
     "chrome": [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
