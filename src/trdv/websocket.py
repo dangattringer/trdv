@@ -110,6 +110,7 @@ class WebSocketClient:
         self,
         session_id: str,
         series_id: str,
+        series_sub_id: str,
         symbol_id: str,
         interval: Union[Interval, str],
         bars_count: int = 300,
@@ -118,7 +119,7 @@ class WebSocketClient:
         interval_str = str(interval) if isinstance(interval, Interval) else interval
         await self.send_message(
             MessageType.CREATE_SERIES,
-            [session_id, series_id, "s1", symbol_id, interval_str, bars_count],
+            [session_id, series_id, series_sub_id, symbol_id, interval_str, bars_count],
         )
 
     async def modify_series(
