@@ -28,3 +28,7 @@ class RateLimitError(TrdvException):
 
 class SymbolNotFound(TrdvException):
     """Raised when a symbol cannot be found."""
+
+
+class WebSocketTimeoutError(TrdvException):
+    """Raised when a WebSocket operation times out."""
