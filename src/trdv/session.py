@@ -110,16 +110,16 @@ class Session:
                 error_message = data.get("error", "Login failed for an unknown reason.")
                 raise AuthenticationError(error_message)
 
-    def set_auth_cookies(self, sessionid: str, session_signature: str):
+    def set_auth_cookies(self, cookies: str):
         """Manually sets the necessary authentication cookies after a browser login."""
-        cookies_to_set = {
-            "sessionid": sessionid,
-            "session_signature": session_signature,
-        }
+        cookies_to_set = {}
+        for cookie in cookies.split("; "):
+            key, value = cookie.split("=", 1)
+            cookies_to_set[key] = value
+
         self._cookie_jar.update_cookies(
             cookies_to_set, response_url=URL("https://www.tradingview.com/")
         )
-        self._authenticated = True
         logger.info(
             "Authentication cookies set manually. The session is authenticated."
         )
