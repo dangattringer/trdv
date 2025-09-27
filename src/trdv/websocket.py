@@ -3,7 +3,7 @@ from datetime import datetime
 import json
 import re
 import logging
-from typing import AsyncGenerator, Union
+from typing import AsyncGenerator
 
 import websockets
 from websockets.client import ClientConnection
@@ -77,7 +77,7 @@ class WebSocketClient:
             and self._ws_connection.state == websockets.protocol.State.OPEN
         )
 
-    async def send_message(self, message_type: Union[MessageType, str], payload: list):
+    async def send_message(self, message_type: MessageType | str, payload: list):
         """Send message with enum support."""
         if not self.is_connected:
             raise TrdvException("WebSocket is not connected.")
@@ -101,10 +101,12 @@ class WebSocketClient:
         self, session_id: str, symbol: str, symbol_id: str = "symbol_1"
     ):
         """Convenience method for resolving symbols using enum."""
-        await self.send_message(
-            MessageType.RESOLVE_SYMBOL,
-            [session_id, symbol_id, f'={{"symbol":"{symbol}","adjustment":"splits"}}'],
-        )
+        payload = [
+            session_id,
+            symbol_id,
+            f'={{"symbol":"{symbol}","adjustment":"splits"}}',
+        ]
+        await self.send_message(MessageType.RESOLVE_SYMBOL, payload)
 
     async def create_series(
         self,
@@ -112,15 +114,20 @@ class WebSocketClient:
         series_id: str,
         series_sub_id: str,
         symbol_id: str,
-        interval: Union[Interval, str],
+        interval: Interval | str,
         bars_count: int = 300,
     ):
         """Create a data series with enum support."""
         interval_str = str(interval) if isinstance(interval, Interval) else interval
-        await self.send_message(
-            MessageType.CREATE_SERIES,
-            [session_id, series_id, series_sub_id, symbol_id, interval_str, bars_count],
-        )
+        payload = [
+            session_id,
+            series_id,
+            series_sub_id,
+            symbol_id,
+            interval_str,
+            bars_count,
+        ]
+        await self.send_message(MessageType.CREATE_SERIES, payload)
 
     async def modify_series(
         self,
@@ -128,7 +135,7 @@ class WebSocketClient:
         series_id: str,
         series_sub_id: str,
         symbol_id: str,
-        interval: Union[Interval, str],
+        interval: Interval | str,
         range_str: str = "",
     ):
         """
@@ -153,9 +160,56 @@ class WebSocketClient:
         ]
         await self.send_message(MessageType.MODIFY_SERIES, payload)
 
-    async def quote_add_symbols(self, session_id: str, symbols: list[str]):
-        """Add symbols to quote session."""
-        await self.send_message(MessageType.QUOTE_ADD_SYMBOLS, [session_id, *symbols])
+    async def quote_create_session(self, session_id: str):
+        """Convenience method for creating quote session using enum."""
+        await self.send_message(MessageType.QUOTE_CREATE_SESSION, [session_id])
+
+    async def snapshoter_create_session(self, session_id: str):
+        """Convenience method for creating quote session using enum."""
+        await self.send_message(MessageType.QUOTE_CREATE_SESSION, [session_id])
+        await self.send_message(
+            MessageType.QUOTE_SET_FIELDS,
+            [
+                session_id,
+                "pro_name",
+                "base_name",
+                "short_name",
+                "description",
+                "type",
+                "exchange",
+                "typespecs",
+                "listed_exchange",
+                "lp",
+                "country_code",
+                "provider_id",
+                "symbol-primaryname",
+                "logoid",
+                "base-currency-logoid",
+                "currency-logoid",
+                "source-logoid",
+                "update_mode",
+                "pro_perm",
+                "source",
+                "source2",
+                "pricescale",
+                "minmov",
+                "fractional",
+                "visible-plots-set",
+                "local_description",
+                "language",
+                "underlying-symbol",
+            ],
+        )
+
+    async def quote_add_symbols(self, session_id: str, symbols_str: str):
+        """Convenience method for adding symbols to quote session using enum."""
+        payload = [session_id, symbols_str]
+        await self.send_message(MessageType.QUOTE_ADD_SYMBOLS, payload)
+
+    async def quote_fast_symbols(self, session_id: str, symbols_str: str):
+        """Convenience method for adding symbols to quote session using enum."""
+        payload = [session_id, symbols_str]
+        await self.send_message(MessageType.QUOTE_FAST_SYMBOLS, payload)
 
     async def _handle_keepalive(self, buffer: str) -> str:
         """Handle keep-alive messages."""
