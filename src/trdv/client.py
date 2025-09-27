@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 
 import polars as pl
 
-
-from .collector import TradingViewDataCollector
+from .collector import (
+    TradingViewFundamentalsDataCollector,
+    TradingViewSeriesDataCollector,
+)
 from .enums import Interval, MessageType
 from .exceptions import TrdvException
-from .models.symbol import Symbol
+from .models import Symbol, QuoteData
 from .session import Session
 from .utils import generate_session_id
 from .websocket import WebSocketClient
@@ -26,6 +28,8 @@ class TradingViewClient:
     _DEFAULT_TIMEOUT = 10.0
     _GUEST_AUTH_TOKEN = "unauthorized_user_token"
     _CHART_SESSION_PREFIX = "cs"
+    _QUOTE_SESSION_PREFIX = "qs_multiplexer_full"
+    _QS_SNAPSHOT_PREFIX = "qs_snapshoter_basic-symbol-quotes_"
     _SERIES_ID_PREFIX = "sds"
     _INTERNAL_SYMBOL_ID = "symbol_1"
     _INTERNAL_SERIES_NAME = "s1"
@@ -34,7 +38,9 @@ class TradingViewClient:
         self._session = session or Session()
         self._ws: WebSocketClient | None = None
         self._chart_session_id: str | None = None
-        self._active_collectors: dict[str, TradingViewDataCollector] = {}
+        self._quote_session_id: str | None = None
+        self._qs_snapshot_id: str | None = None
+        self._active_collectors: dict[str, TradingViewSeriesDataCollector] = {}
 
     async def __aenter__(self):
         """Initializes the WebSocket connection and performs the handshake."""
@@ -62,8 +68,13 @@ class TradingViewClient:
 
         self._chart_session_id = generate_session_id(self._CHART_SESSION_PREFIX)
         await self._ws.send_message(
-            MessageType.CHART_CREATE_SESSION.value, [self._chart_session_id, ""]
+            MessageType.CHART_CREATE_SESSION.value, [self._chart_session_id]
         )
+        self._quote_session_id = generate_session_id(self._QUOTE_SESSION_PREFIX)
+        await self._ws.quote_create_session(self._quote_session_id)
+        self._qs_snapshot_id = generate_session_id(self._QS_SNAPSHOT_PREFIX)
+        await self._ws.snapshoter_create_session(self._qs_snapshot_id)
+
         logger.info("Handshake complete.")
 
     def _validate_parameters(
@@ -130,7 +141,7 @@ class TradingViewClient:
         logger.info(f"Fetching history for {symbol} on interval {interval.value}...")
 
         series_id = generate_session_id(self._SERIES_ID_PREFIX)
-        collector = TradingViewDataCollector(series_id, symbol, interval)
+        collector = TradingViewSeriesDataCollector(series_id, symbol, interval)
         self._active_collectors[series_id] = collector
 
         try:
@@ -160,7 +171,7 @@ class TradingViewClient:
 
     async def _process_messages_for_history(
         self,
-        collector: TradingViewDataCollector,
+        collector: TradingViewSeriesDataCollector,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
     ):
@@ -192,7 +203,7 @@ class TradingViewClient:
     async def _handle_history_message(
         self,
         message: dict,
-        collector: TradingViewDataCollector,
+        collector: TradingViewSeriesDataCollector,
         start_time: datetime | None,
         end_time: datetime | None,
     ) -> bool:
@@ -257,7 +268,7 @@ class TradingViewClient:
         return False
 
     # --- Symbol Data ---
-    async def get_symbol_info(self, symbol: str) -> dict | None:
+    async def get_symbol_info(self, symbol: str) -> Symbol | None:
         """
         Fetch detailed information for a single symbol.
 
@@ -316,3 +327,94 @@ class TradingViewClient:
                 f"An unexpected error occurred while fetching symbol info for {symbol}: {e}"
             )
             return None
+
+    # --- Fundamental Data ---
+    async def get_fundamentals(self, symbol: str) -> QuoteData | None:
+        if not self._ws or not self._quote_session_id:
+            raise TrdvException(
+                "Client is not connected. Use 'async with' context manager."
+            )
+
+        logger.info(f"Fetching fundamental data for {symbol}...")
+        collector = TradingViewFundamentalsDataCollector(symbol)
+
+        try:
+            await self._ws.quote_add_symbols(
+                self._quote_session_id,
+                symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
+            )
+            await self._ws.quote_add_symbols(
+                self._qs_snapshot_id,
+                symbols_str=symbol,
+            )
+            await self._ws.quote_fast_symbols(
+                self._quote_session_id,
+                symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
+            )
+
+            async_iter = self._ws._process_messages()
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
+                    )
+                    logger.debug(f"RECEIVED: {message}")
+
+                    should_break = await self._process_messages_for_fundamentals(
+                        collector
+                    )
+                    if should_break:
+                        return QuoteData.model_validate(collector.fundamentals_data)
+
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Timed out waiting for symbol info for {symbol}. Aborting."
+                    )
+                    return None
+                except StopAsyncIteration:
+                    logger.info("Message stream ended before symbol info was received.")
+                    return None
+
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred while fetching symbol info for {symbol}: {e}"
+            )
+            return None
+
+    async def _process_messages_for_fundamentals(
+        self, collector: TradingViewFundamentalsDataCollector
+    ) -> bool:
+        """Main message processing loop for a get_fundamentals request."""
+        async_iter = self._ws._process_messages()
+        while True:
+            try:
+                message = await asyncio.wait_for(
+                    async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
+                )
+                logger.debug(f"RECEIVED: {message}")
+
+                msg_type = message.get("m")
+                payload = message.get("p", [])
+
+                if (
+                    msg_type == MessageType.QUOTE_SERIES_DATA.value
+                    and payload[0] == self._quote_session_id
+                ):
+                    data = payload[1].get("v", {})
+                    collector.add_data(data)
+
+                elif (
+                    msg_type == MessageType.QUOTE_COMPLETED.value
+                    and payload[0] == self._quote_session_id
+                ):
+                    logger.info(f"Fundamental data for {collector.symbol} received.")
+                    return True
+
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Timed out waiting for fundamentals for {collector.symbol}."
+                )
+                break
+            except StopAsyncIteration:
+                logger.info("Message stream ended before fundamentals were received.")
+                break
