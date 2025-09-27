@@ -18,7 +18,7 @@ class QuoteData(BaseModel):
     symbol: str | None = None
     short_name: str | None = None
     description: str | None = None
-    short_description: str | None = Field(None, alias="short-description")
+    short_description: str | None = None
     local_description: str | None = None
     exchange: str | None = None
     listed_exchange: str | None = None
@@ -34,6 +34,7 @@ class QuoteData(BaseModel):
     base_name: list[str] | None = None
     symbol_primary_listing: str = Field(None, alias="symbol_primary_listing")
     symbol_proname: str | None = Field(None, alias="symbol-proname")
+    symbol_fullname: str | None = Field(None, alias="symbol-fullname")
     pro_perm: str | None = None
     language: str | None = None
     is_tradable: bool | None = None
@@ -166,6 +167,7 @@ class QuoteData(BaseModel):
     total_shares_outstanding_calculated: float | None = None
     total_shares_outstanding_fundamental: int | None = None
     float_shares_outstanding: float | None = None
+    float_shares_outstanding_current: float | None = None
     beta_1_year: float | None = None
     beta_3_year: float | None = None
     beta_5_year: float | None = None
@@ -185,9 +187,11 @@ class QuoteData(BaseModel):
     earnings_per_share_ttm: float | None = None
     earnings_per_share_basic_ttm: float | None = None
     earnings_per_share_diluted_ttm: float | None = None
+    earnings_per_share_diluted_ttm_h: list[float] | None = None
     last_annual_eps: float | None = None
     last_annual_revenue: float | None = None
     total_revenue: float | None = None
+    total_revenue_ttm_h: list[int | None] | None = None
     dividends_yield_current: float | None = None
     return_on_equity: float | None = None
     return_on_assets: float | None = None
@@ -206,6 +210,7 @@ class QuoteData(BaseModel):
     days_to_maturity: Any | None = None
     earnings_availability: int | None = None
     rt_update_period: int | None = None
+    rt_update_time: str | None = Field(None, alias="rt-update-time")
     open_time: datetime | None = None
     measure: str | None = None
     last_report_frequency: int | None = None
@@ -218,6 +223,7 @@ class QuoteData(BaseModel):
     is_primary_listing: bool | None = Field(None, alias="is-primary-listing")
     fiscal_period_end_current: datetime | None = None
     operating_margin_current: float | None = None
+    earnings_release_time: int | None = None
     earnings_release_time_fq: int | None = None
     return_on_equity_current: float | None = None
     price_target_down_num: int | None = None
@@ -239,8 +245,10 @@ class QuoteData(BaseModel):
     rates_fq: Rates | None = None
     rates_cf: Rates | None = None
     rates_pt: Rates | None = None
+    rates_earnings_fq: Rates | None = None
     rates_earnings_fy: Rates | None = None
     rates_earnings_next_fq: Rates | None = None
+    rates_earnings_next_fy: Rates | None = None
     revenues_fy_h: list[FinancialReport] | None = None
     revenues_fq_h: list[FinancialReport] | None = None
     earnings_fy_h: list[FinancialReport] | None = None
@@ -283,6 +291,7 @@ class QuoteData(BaseModel):
     accounts_receivables_net_fq: float | None = None
     accounts_receivables_net_fq_h: list[float | None] | None = None
     accounts_receivables_net_fy: float | None = None
+    accounts_receivables_net_fy_h: list[int] | None = None
     additional_paid_in_capital_fq: float | None = None
     additional_paid_in_capital_fq_h: list[float | None] | None = None
     additional_paid_in_capital_fy: float | None = None
@@ -397,6 +406,7 @@ class QuoteData(BaseModel):
     cash_per_share_fq_h: list[float | None] | None = None
     cash_per_share_fy: float | None = None
     cash_per_share_fy_h: list[float | None] | None = None
+    cash_per_share_current: float | None = None
     change_in_accounts_payable_fq: float | None = None
     change_in_accounts_payable_fq_h: list[float | None] | None = None
     change_in_accounts_payable_fy: float | None = None
@@ -410,14 +420,17 @@ class QuoteData(BaseModel):
     change_in_accrued_expenses_fq: float | None = None
     change_in_accrued_expenses_fq_h: list[float | None] | None = None
     change_in_accrued_expenses_fy: float | None = None
+    change_in_accrued_expenses_fy_h: list[int] | None = None
     change_in_accrued_expenses_ttm: float | None = None
     change_in_inventories_fq: float | None = None
     change_in_inventories_fq_h: list[float | None] | None = None
     change_in_inventories_fy: float | None = None
+    change_in_inventories_fy_h: list[int] | None = None
     change_in_inventories_ttm: float | None = None
     change_in_other_assets_fq: float | None = None
     change_in_other_assets_fq_h: list[float | None] | None = None
     change_in_other_assets_fy: float | None = None
+    change_in_other_assets_fy_h: list[int] | None = None
     change_in_other_assets_ttm: float | None = None
     change_in_taxes_payable_fq_h: list[Any | None] = None
     change_in_taxes_payable_fy_h: list[Any | None] | None = None
@@ -561,8 +574,13 @@ class QuoteData(BaseModel):
     earnings_per_share_fy: float | None = None
     earnings_per_share_fy_h: list[float | None] | None = None
     earnings_publication_type_next_fy: int | None = None
+    earnings_release_time: int | None = None
+    earnings_release_trading_date_fq: int | None = None
     earnings_release_calendar_date: datetime | None = None
     earnings_release_calendar_date_fq: datetime | None = None
+    earnings_release_date_fy: int | None = None
+    earnings_release_date_h: list[int] | None = None
+    earnings_release_date_fq: int | None = None
     earnings_release_date_fq_h: list[int | None] = None
     earnings_release_date_fy_h: list[int | None] | None = None
     earnings_release_next_calendar_date: datetime | None = None
@@ -578,6 +596,8 @@ class QuoteData(BaseModel):
     earnings_fiscal_period_fq_h: list[str | None] = None
     earnings_fiscal_period_fy: str | None = None
     earnings_fiscal_period_fy_h: list[str | None] = None
+    next_earnings_fiscal_period_fy: str | None = None
+    next_earnings_fiscal_period_fq: str | None = None
     ebit_fq: float | None = None
     ebit_fq_h: list[float | None] | None = None
     ebit_fy: float | None = None
@@ -596,6 +616,7 @@ class QuoteData(BaseModel):
     ebitda_margin_fy: float | None = None
     ebitda_margin_fy_h: list[float | None] | None = None
     ebitda_margin_ttm: float | None = None
+    ebitda_margin_current: float | None = None
     ebitda_per_employee_fy: float | None = None
     ebitda_per_share_fq: float | None = None
     ebitda_per_share_fq_h: list[float | None] | None = None
@@ -603,16 +624,20 @@ class QuoteData(BaseModel):
     ebitda_per_share_fy_h: list[float | None] | None = None
     ebitda_per_share_ttm: float | None = None
     ebitda_per_share_current: float | None = None
+    ebitda_ttm: int | None = None
     ebitda_ttm_h: list[float | None] | None = None
+    ebitda_margin_current: float | None = None
     ebit_per_share_fq: float | None = None
     ebit_per_share_fq_h: list[float | None] | None = None
     ebit_per_share_fy: float | None = None
     ebit_per_share_fy_h: list[float | None] | None = None
     ebit_per_share_ttm: float | None = None
+    ebit_per_share_current: float | None = None
     effective_interest_rate_on_debt_fy: float | None = None
     effective_interest_rate_on_debt_ttm: float | None = None
     enterprise_value_ebitda_fq_h: list[Any | None] = None
     enterprise_value_ebitda_fy_h: list[Any | None] = None
+    enterprise_value_fq: float | None = None
     enterprise_value_fq_h: list[float | None] | None = None
     enterprise_value_fy_h: list[float | None] | None = None
     enterprise_value_fy: float | None = None
@@ -643,6 +668,7 @@ class QuoteData(BaseModel):
     free_cash_flow_per_share_fy_h: list[float | None] | None = None
     free_cash_flow_per_share_ttm: float | None = None
     free_cash_flow_per_share_current: float | None = None
+    free_cash_flow_ttm: int | None = None
     free_cash_flow_ttm_h: list[float | None] | None = None
     fund_view_mode: str | None = None
     funds_f_operations_fq: float | None = None
@@ -671,12 +697,15 @@ class QuoteData(BaseModel):
     gross_profit_fq_h: list[float | None] | None = None
     gross_profit_fy: float | None = None
     gross_profit_fy_h: list[float | None] | None = None
+    gross_profit_ttm: float | None = None
     gross_profit_ttm_h: list[float | None] | None = None
     group: str | None = None
     history_tag: str | None = Field(None, alias="history-tag")
     has_dwm: bool | None = Field(None, alias="has-dwm")
     has_etf_ownership: bool | None = None
+    has_depth: bool | None = Field(None, alias="has-depth")
     has_no_realtime: bool | None = Field(None, alias="has-no-realtime")
+    has_no_bbo: bool | None = Field(None, alias="has-no-bbo")
     has_price_snapshot: bool | None = Field(None, alias="has-price-snapshot")
     impairments_fy_h: list[Any | None] | None = None
     income_tax_credits_fy: float | None = None
@@ -739,6 +768,7 @@ class QuoteData(BaseModel):
     inventory_work_in_progress_fy: float | None = None
     inventory_work_in_progress_fy_h: list[float | None] | None = None
     inventory_work_in_progress_fy_h: list[float | None] | None = None
+    invested_capital_fq: int | None = None
     invested_capital_fy: float | None = None
     investments_in_unconcsolidate_fq: float | None = None
     investments_in_unconcsolidate_fq_h: list[float | None] | None = None
@@ -801,6 +831,7 @@ class QuoteData(BaseModel):
     long_term_other_assets_total_fy_h: list[float | None] | None = None
     market_cap_basic_fq: float | None = None
     local_popularity: dict[str, int] | None = None
+    local_popularity_rank: dict[str, float] | None = None
     market_cap_basic_fq_h: list[float | None] | None = None
     market_cap_basic_fy: float | None = None
     market_cap_basic_fy_h: list[float | None] | None = None
@@ -881,7 +912,9 @@ class QuoteData(BaseModel):
     oper_income_per_employee_fy: float | None = None
     oper_income_ttm: float | None = None
     operating_expenses_fq: float | None = None
+    operating_expenses_fq_h: list[int] | None = None
     operating_expenses_fy: float | None = None
+    operating_expenses_fy_h: list[int] | None = None
     operating_expenses_ttm: float | None = None
     operating_lease_liabilities_fq: float | None = None
     operating_lease_liabilities_fq_h: list[float | None] | None = None
@@ -891,10 +924,12 @@ class QuoteData(BaseModel):
     operating_margin_fq_h: list[float | None] | None = None
     operating_margin_fy: float | None = None
     operating_cash_flow_per_share: float | None = None
+    operating_cash_flow_per_share_ttm: float | None = None
     operating_cash_flow_per_share_current: float | None = None
     operating_cash_flow_per_share_fq: float | None = None
     operating_cash_flow_per_share_fq_h: list[float | None] | None = None
     operating_cash_flow_per_share_fy: float | None = None
+    operating_cash_flow_per_share_fy_h: list[float] | None = None
     operating_margin_fy_h: list[float | None] | None = None
     other_common_equity_fq: float | None = None
     other_common_equity_fq_h: list[float | None] | None = None
@@ -999,6 +1034,7 @@ class QuoteData(BaseModel):
     ppe_total_net_fq_h: list[float | None] | None = None
     ppe_total_net_fy: float | None = None
     piotroski_f_score_fy: int | None = None
+    piotroski_f_score_ttm: int | None = None
     ppe_total_net_fy_h: list[float | None] | None = None
     pre_tax_margin: float | None = None
     pre_tax_margin_current: float | None = None
@@ -1032,54 +1068,60 @@ class QuoteData(BaseModel):
     pretax_income_fq: float | None = None
     pretax_income_fq_h: list[float | None] | None = None
     pretax_income_fy: float | None = None
-    price_target_date: str | None = None
     pretax_income_fy_h: list[float | None] | None = None
     price_annual_book: float | None = None
     price_annual_sales: float | None = None
     price_book_fq: float | None = None
     price_book_fq_h: list[float | None] | None = None
+    price_book_fy: float | None = None
     price_book_fy_h: list[float | None] | None = None
     price_cash_flow_fq_h: list[Any | None] = None
     price_cash_flow_fy_h: list[Any | None] = None
     price_book_current: float | None = None
     price_earnings_fq_h: list[Any | None] = None
     price_earnings_fy_h: list[Any | None] = None
-    price_sales_fq: float | None
+    price_revenue_ttm: float | None = None
+    price_sales_current: float | None = None
+    price_sales_fq: float | None = None
     price_sales_fq_h: list[float | None] | None = None
+    price_sales_fy: float | None = None
     price_sales_fy_h: list[float | None] | None = None
-    proceeds_from_stock_options_fq: float | None
+    proceeds_from_stock_options_fq: float | None = None
     proceeds_from_stock_options_fq_h: list[float | None] | None = None
     proceeds_from_stock_options_fy: float | None = None
-    price_target_estimates_num: int | None
+    price_target_date: str | None = None
+    price_target_up_num: int | None = None
+    price_target_estimates_num: int | None = None
     proceeds_from_stock_options_fy_h: list[float | None] | None = None
-    provision_f_risks_fq: float | None
+    provision_f_risks_fq: float | None = None
     provision_f_risks_fq_h: list[float | None] | None = None
-    provision_f_risks_fy: float | None
+    provision_f_risks_fy: float | None = None
     provision_f_risks_fy_h: list[float | None] | None = None
-    purchase_of_business_fq: float | None
+    purchase_of_business_fq: float | None = None
     purchase_of_business_fq_h: list[float | None] | None = None
-    purchase_of_business_fy: float | None
+    purchase_of_business_fy: float | None = None
     purchase_of_business_fy_h: list[float | None] | None = None
-    purchase_of_business_ttm: float | None
-    purchase_of_investments_fq: float | None
+    purchase_of_business_ttm: float | None = None
+    purchase_of_investments_fq: float | None = None
     purchase_of_investments_fq_h: list[float | None] | None = None
-    purchase_of_investments_fy: float | None
-    purchase_of_investments_ttm: float | None
-    purchase_of_stock_fq: float | None
+    purchase_of_investments_fy: float | None = None
+    purchase_of_investments_fy_h: list[int] | None = None
+    purchase_of_investments_ttm: float | None = None
+    purchase_of_stock_fq: float | None = None
     purchase_of_stock_fq_h: list[float | None] | None = None
-    purchase_of_stock_fy: float | None
+    purchase_of_stock_fy: float | None = None
     purchase_of_stock_fy_h: list[float | None] | None = None
-    purchase_of_stock_ttm: float | None
-    purchase_sale_business_fq: float | None
+    purchase_of_stock_ttm: float | None = None
+    purchase_sale_business_fq: float | None = None
     purchase_sale_business_fq_h: list[float | None] | None = None
-    purchase_sale_business_fy: float | None
+    purchase_sale_business_fy: float | None = None
     purchase_sale_business_fy_h: list[float | None] | None = None
-    purchase_sale_business_ttm: float | None
-    purchase_sale_investments_fq: float | None
+    purchase_sale_business_ttm: float | None = None
+    purchase_sale_investments_fq: float | None = None
     purchase_sale_investments_fq_h: list[float | None] | None = None
-    purchase_sale_investments_fy: float | None
+    purchase_sale_investments_fy: float | None = None
     purchase_sale_investments_fy_h: list[float | None] | None = None
-    purchase_sale_investments_ttm: float | None
+    purchase_sale_investments_ttm: float | None = None
     quick_ratio_fq: float | None = None
     quick_ratio_fq_h: list[float | None] | None = None
     quick_ratio_fy: float | None = None
@@ -1112,10 +1154,12 @@ class QuoteData(BaseModel):
     return_on_assets_fq_h: list[float | None] | None = None
     return_on_assets_fy: float | None = None
     return_on_assets_fy_h: list[float | None] | None = None
+    return_on_invested_capital_fq_h: list[float] | None = None
+    return_on_capital_employed_fq: float | None = None
     return_on_capital_employed_fy: float | None = None
     return_on_common_equity_fy: float | None = None
-    return_on_equity_adjust_to_book_fy: float | None = None
     return_on_common_equity_ttm: float | None = None
+    return_on_equity_adjust_to_book_fy: float | None = None
     return_on_equity_adjust_to_book_ttm: float | None = None
     return_on_equity_fq: float | None = None
     return_on_equity_fq_h: list[float | None] | None = None
@@ -1126,7 +1170,9 @@ class QuoteData(BaseModel):
     return_on_invested_capital_current: float | None = None
     return_on_invested_capital_fy_h: list[float | None] | None = None
     return_on_tang_assets_fy: float | None = None
+    return_on_tang_assets_fq: float | None = None
     return_on_tang_equity_fy: float | None = None
+    return_on_tang_equity_fq: float | None = None
     return_on_total_capital_fq: float | None = None
     return_on_total_capital_fy: float | None = None
     revenue_forecast_fq: float | None = None
@@ -1149,6 +1195,7 @@ class QuoteData(BaseModel):
     revenue_per_share_fy: float | None = None
     revenue_per_share_current: float | None = None
     revenue_per_share_fy_h: list[float | None] | None = None
+    revenue_per_share_ttm: float | None = None
     rt_lag: datetime | None = Field(None, alias="rt-lag")
     rts_source: int | None = Field(None, alias="rts-source")
     sale_of_stock_fq: float | None = None
@@ -1341,6 +1388,9 @@ class QuoteData(BaseModel):
     fiscal_period_end_fy_h: list[datetime] | None = None
     fiscal_period_fq: str | None = None
     fiscal_period_fy: str | None = None
+    fiscal_period_fy_h: list[str] | None = None
+    fiscal_period_fq_h: list[str] | None = None
+    fiscal_period_fy_h: list[str] | None = None
     free_cash_flow: float | None = None
 
     class Config:
