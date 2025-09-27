@@ -10,9 +10,9 @@ from .exceptions import TrdvException
 logger = logging.getLogger(__name__)
 
 
-class TradingViewDataCollector:
+class TradingViewSeriesDataCollector:
     """
-    Handles data collection and processing for a specific symbol request.
+    Handles series data collection and processing for a specific symbol request.
 
     This class acts as a temporary store for data received from the WebSocket
     and provides a method to convert it into a structured Polars DataFrame.
@@ -99,3 +99,23 @@ class TradingViewDataCollector:
             raise TrdvException(
                 f"Failed to process market data for '{self.symbol}': {e}"
             ) from e
+
+
+class TradingViewFundamentalsDataCollector:
+    """
+    Handles fundamentals data collection for a specific symbol request.
+
+    This class acts as a temporary store for fundamentals data received from the WebSocket.
+    """
+
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+        self.all_fundamentals_data: list = []
+        self.fundamentals_data: dict | None = None
+
+    def add_data(self, data: dict) -> None:
+        """Add new fundamentals data points from a WebSocket message."""
+        self.all_fundamentals_data.append(data)
+        if self.fundamentals_data is None:
+            self.fundamentals_data = {}
+        self.fundamentals_data.update(data)
