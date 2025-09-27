@@ -57,6 +57,9 @@ class MessageType(Enum):
     QUOTE_ADD_SYMBOLS = "quote_add_symbols"
     QUOTE_REMOVE_SYMBOLS = "quote_remove_symbols"
     QUOTE_FAST_SYMBOLS = "quote_fast_symbols"
+    QUOTE_SET_FIELDS = "quote_set_fields"
+    QUOTE_COMPLETED = "quote_completed"
+    QUOTE_SERIES_DATA = "qsd"
 
     # Study/indicator operations
     CREATE_STUDY = "create_study"
