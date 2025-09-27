@@ -21,7 +21,7 @@ class Interval(Enum):
     HOUR_4 = "240"
 
     # Daily, Weekly, Monthly intervals
-    DAY = "1D"
+    DAY = "D"
     WEEK = "1W"
     MONTH = "1M"
     MONTH_3 = "3M"
@@ -50,9 +50,10 @@ class MessageType(Enum):
     SERIES_LOADING = "series_loading"
     SYMBOL_RESOLVED = "symbol_resolved"
     TIMESCALE_UPDATE = "timescale_update"
+    DATA_UPDATE = "du"
+    SERIES_TIMEFRAME = "series_timeframe"
 
     # Data requests
-    REQUEST_MORE_DATA = "request_more_data"
     QUOTE_ADD_SYMBOLS = "quote_add_symbols"
     QUOTE_REMOVE_SYMBOLS = "quote_remove_symbols"
     QUOTE_FAST_SYMBOLS = "quote_fast_symbols"
