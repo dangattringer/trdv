@@ -6,6 +6,7 @@ import logging
 from typing import AsyncGenerator, Union
 
 import websockets
+from websockets.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from .session import Session
@@ -22,12 +23,9 @@ class WebSocketClient:
 
     def __init__(self, session: Session, connection_timeout: float = 10.0):
         self.session = session
-        self._ws_connection: websockets.connect | None = None
+        self._ws_connection: ClientConnection | None = None
         self._connection_timeout = connection_timeout
         self._closed = False
-
-        current_date = datetime.now().isoformat()
-        self.uri = f"wss://data.tradingview.com/socket.io/websocket?from=chart%2F&date={current_date}&type=chart"
 
     async def __aenter__(self):
         await self.connect()
@@ -39,10 +37,12 @@ class WebSocketClient:
     async def connect(self):
         """Establish WebSocket connection with proper error handling."""
         logger.info("Connecting to WebSocket...")
+        current_date = datetime.now().isoformat()
+        uri = f"wss://data.tradingview.com/socket.io/websocket?from=chart%2F&date={current_date}&type=chart"
         try:
             self._ws_connection = await asyncio.wait_for(
                 websockets.connect(
-                    self.uri,
+                    uri,
                     origin=TRADINGVIEW_DATA_URL,
                     ping_interval=20,
                     ping_timeout=10,
