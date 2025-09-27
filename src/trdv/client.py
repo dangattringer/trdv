@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 
 import polars as pl
 
+
 from .collector import TradingViewDataCollector
 from .enums import Interval, MessageType
 from .exceptions import TrdvException
+from .models.symbol import Symbol
 from .session import Session
 from .utils import generate_session_id
 from .websocket import WebSocketClient
@@ -15,7 +17,7 @@ from .websocket import WebSocketClient
 logger = logging.getLogger(__name__)
 
 
-class TradingView:
+class TradingViewClient:
     """
     Asynchronous client to interact with the TradingView WebSocket API
     for fetching historical market data.
@@ -73,8 +75,6 @@ class TradingView:
         end_time: datetime | None,
     ) -> None:
         """Validates input parameters to prevent basic errors."""
-        if not symbol or not symbol.strip():
-            raise TrdvException("Symbol cannot be empty.")
         if not re.match(r"^[A-Z_]+:[A-Z_]+$", symbol):
             raise TrdvException(
                 "Symbol must be in the format 'EXCHANGE:SYMBOL', e.g., 'NASDAQ:AAPL'."
@@ -124,7 +124,7 @@ class TradingView:
         # Set default values
         n_bars = n_bars or 10
         end_time = end_time or datetime.now(timezone.utc)
-
+        symbol = symbol.strip().upper()
         self._validate_parameters(symbol, interval, n_bars, start_time, end_time)
 
         logger.info(f"Fetching history for {symbol} on interval {interval.value}...")
@@ -296,7 +296,7 @@ class TradingView:
                     if msg_type == MessageType.SYMBOL_RESOLVED.value:
                         symbol_info = message.get("p", [None, None, None])[2]
                         logger.info(f"Successfully resolved symbol info for {symbol}.")
-                        return symbol_info
+                        return Symbol.model_validate(symbol_info)
 
                     if msg_type == MessageType.PROTOCOL_ERROR.value:
                         error_msg = message.get("p", ["Unknown error"])[0]
