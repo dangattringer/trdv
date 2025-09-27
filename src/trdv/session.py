@@ -4,7 +4,7 @@ import aiohttp
 from yarl import URL
 from pydantic import ValidationError
 
-from .const import USER_AGENTS
+from .const import USER_AGENTS, TRADINGVIEW_LOGIN_URL
 from .exceptions import AuthenticationError, CaptchaRequired
 from .models import UserModel
 
@@ -63,7 +63,6 @@ class Session:
                 "username and password must be provided for login."
             )
 
-        sign_in_url = "https://www.tradingview.com/accounts/signin/"
         payload = {
             "username": self.username,
             "password": self.__password,
@@ -72,7 +71,7 @@ class Session:
 
         async with aiohttp.ClientSession(cookie_jar=self._cookie_jar) as session:
             async with session.post(
-                sign_in_url, data=payload, headers=self._headers
+                TRADINGVIEW_LOGIN_URL, data=payload, headers=self._headers
             ) as resp:
                 if resp.content_type == "application/json":
                     data = await resp.json()
@@ -90,7 +89,7 @@ class Session:
                     )
                     raise CaptchaRequired(
                         "CAPTCHA challenge detected. Please solve it in your browser.",
-                        url=sign_in_url,
+                        url=TRADINGVIEW_LOGIN_URL,
                     )
 
                 if resp.status == 200 and data.get("user"):

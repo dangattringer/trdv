@@ -6,6 +6,7 @@ import logging
 from typing import AsyncGenerator, Union
 
 import websockets
+from websockets.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from .session import Session
@@ -22,7 +23,7 @@ class WebSocketClient:
 
     def __init__(self, session: Session, connection_timeout: float = 10.0):
         self.session = session
-        self._ws_connection: websockets.connect | None = None
+        self._ws_connection: ClientConnection | None = None
         self._connection_timeout = connection_timeout
         self._closed = False
 
