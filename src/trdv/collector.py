@@ -1,12 +1,12 @@
 import logging
 from datetime import datetime, timezone
+
 import polars as pl
-from polars.exceptions import SchemaError, ComputeError
-from .exceptions import TrdvException
+from polars.exceptions import ComputeError, SchemaError
+
 from .enums import Interval
+from .exceptions import TrdvException
 
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +32,7 @@ class TradingViewDataCollector:
         self.symbol = symbol
         self.interval = interval
         self.all_series_data: list = []
+        self.is_initial_series_loaded: bool = False
 
     def add_data(self, series_data: list) -> None:
         """Add new series data points from a WebSocket message."""

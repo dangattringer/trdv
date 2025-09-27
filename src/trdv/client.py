@@ -1,19 +1,17 @@
-import logging
 import asyncio
+import logging
 import re
-from typing import Optional
 from datetime import datetime, timezone
+
 import polars as pl
-from .exceptions import TrdvException
-from .enums import Interval
-from .session import Session
-from .websocket import WebSocketClient
-from .utils import generate_session_id
-from .enums import MessageType
+
 from .collector import TradingViewDataCollector
+from .enums import Interval, MessageType
+from .exceptions import TrdvException
+from .session import Session
+from .utils import generate_session_id
+from .websocket import WebSocketClient
 
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -58,11 +56,11 @@ class TradingView:
         else:
             logger.info("Proceeding with a guest session.")
 
-        await self._ws.send_message(str(MessageType.SET_AUTH_TOKEN), [auth_token])
+        await self._ws.send_message(MessageType.SET_AUTH_TOKEN.value, [auth_token])
 
         self._chart_session_id = generate_session_id(self._CHART_SESSION_PREFIX)
         await self._ws.send_message(
-            str(MessageType.CHART_CREATE_SESSION), [self._chart_session_id, ""]
+            MessageType.CHART_CREATE_SESSION.value, [self._chart_session_id, ""]
         )
         logger.info("Handshake complete.")
 
@@ -92,6 +90,7 @@ class TradingView:
         if start_time and end_time and start_time >= end_time:
             raise TrdvException("'start_time' must be before 'end_time'.")
 
+    # --- Historical Data Fetching ---
     async def get_history(
         self,
         symbol: str,
@@ -167,7 +166,6 @@ class TradingView:
     ):
         """Main message processing loop for a get_history request."""
         async_iter = self._ws._process_messages()
-        is_initial_series_loaded = False
 
         while True:
             try:
@@ -175,11 +173,8 @@ class TradingView:
                     async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
                 )
 
-                (
-                    should_break,
-                    is_initial_series_loaded,
-                ) = await self._handle_history_message(
-                    message, collector, start_time, end_time, is_initial_series_loaded
+                should_break = await self._handle_history_message(
+                    message, collector, start_time, end_time
                 )
 
                 if should_break:
@@ -200,20 +195,20 @@ class TradingView:
         collector: TradingViewDataCollector,
         start_time: datetime | None,
         end_time: datetime | None,
-        is_initial_series_loaded: bool,
-    ) -> tuple[bool, bool]:
+    ) -> bool:
         """
         Handles a single WebSocket message.
 
         Returns:
-            A tuple (should_break, new_state) where:
-            - should_break (bool): True if the message processing loop should terminate.
-            - new_state (bool): The updated value for `is_initial_series_loaded`.
+            A boolean indicating if the message processing loop should terminate.
         """
         logger.debug(f"RECEIVED: {message}")
         msg_type = message.get("m")
 
-        if msg_type in ("du", "timescale_update"):
+        if msg_type in (
+            MessageType.DATA_UPDATE.value,
+            MessageType.TIMESCALE_UPDATE.value,
+        ):
             payload: dict = message.get("p", [None, {}])[1]
             if payload and (
                 series_data := payload.get(collector.series_id, {}).get("s")
@@ -224,7 +219,7 @@ class TradingView:
                 collector.add_data(series_data)
 
         elif msg_type == MessageType.SERIES_COMPLETED.value:
-            if not is_initial_series_loaded:
+            if not collector.is_initial_series_loaded:
                 logger.info(f"Initial series load completed for {collector.symbol}.")
 
                 if start_time:
@@ -242,20 +237,82 @@ class TradingView:
                     logger.info(
                         f"Requested historical data from {start_time} to {end_time}."
                     )
-                    return (False, True)
+                    collector.is_initial_series_loaded = True
+                    return False
                 else:
                     logger.info(
                         f"Initial data for {collector.symbol} received. Completing fetch."
                     )
-                    return (True, True)
+                    return True
             else:
                 logger.info(
                     f"Historical data range for {collector.symbol} received. Completing fetch."
                 )
-                return (True, True)
+                return True
 
         elif msg_type == MessageType.PROTOCOL_ERROR.value:
             error_msg = message.get("p", ["Unknown error"])[0]
             raise TrdvException(f"Protocol error from server: {error_msg}")
 
-        return (False, is_initial_series_loaded)
+        return False
+
+    # --- Symbol Data ---
+    async def get_symbol_info(self, symbol: str) -> dict | None:
+        """
+        Fetch detailed information for a single symbol.
+
+        This includes session times, holidays, exchange details, splits, and more.
+
+        Args:
+            symbol (str): The symbol to fetch data for (e.g., "NASDAQ:AAPL").
+
+        Returns:
+            A dictionary containing the symbol information, or None if an error occurs.
+        """
+        if not self._ws or not self._chart_session_id:
+            raise TrdvException(
+                "Client is not connected. Use 'async with' context manager."
+            )
+
+        logger.info(f"Fetching symbol info for {symbol}...")
+
+        try:
+            await self._ws.resolve_symbol(
+                self._chart_session_id,
+                symbol=symbol,
+                symbol_id=self._INTERNAL_SYMBOL_ID,
+            )
+
+            async_iter = self._ws._process_messages()
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
+                    )
+                    logger.debug(f"RECEIVED: {message}")
+
+                    msg_type = message.get("m")
+
+                    if msg_type == MessageType.SYMBOL_RESOLVED.value:
+                        symbol_info = message.get("p", [None, None, None])[2]
+                        logger.info(f"Successfully resolved symbol info for {symbol}.")
+                        return symbol_info
+
+                    if msg_type == MessageType.PROTOCOL_ERROR.value:
+                        error_msg = message.get("p", ["Unknown error"])[0]
+                        raise TrdvException(f"Protocol error from server: {error_msg}")
+
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Timed out waiting for symbol info for {symbol}. Aborting."
+                    )
+                    return None
+                except StopAsyncIteration:
+                    logger.info("Message stream ended before symbol info was received.")
+                    return None
+
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred while fetching symbol info for {symbol}: {e}"
+            )
+            return None
