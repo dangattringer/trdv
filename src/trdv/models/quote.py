@@ -912,7 +912,7 @@ class QuoteData(BaseModel):
     oper_income_per_employee_fy: float | None = None
     oper_income_ttm: float | None = None
     operating_expenses_fq: float | None = None
-    operating_expenses_fq_h: list[int] | None = None
+    operating_expenses_fq_h: list[int | float] | None = None
     operating_expenses_fy: float | None = None
     operating_expenses_fy_h: list[int] | None = None
     operating_expenses_ttm: float | None = None
@@ -1154,7 +1154,7 @@ class QuoteData(BaseModel):
     return_on_assets_fq_h: list[float | None] | None = None
     return_on_assets_fy: float | None = None
     return_on_assets_fy_h: list[float | None] | None = None
-    return_on_invested_capital_fq_h: list[float] | None = None
+    return_on_invested_capital_fq_h: list[float | None] | None = None
     return_on_capital_employed_fq: float | None = None
     return_on_capital_employed_fy: float | None = None
     return_on_common_equity_fy: float | None = None
