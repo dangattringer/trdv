@@ -65,6 +65,8 @@ class MessageType(Enum):
     CREATE_STUDY = "create_study"
     MODIFY_STUDY = "modify_study"
     REMOVE_STUDY = "remove_study"
+    STUDY_COMPLETED = "study_completed"
+    STUDY_LOADING = "study_loading"
 
     # Session management
     SWITCH_TIMEZONE = "switch_timezone"

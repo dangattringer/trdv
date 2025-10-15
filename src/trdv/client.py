@@ -2,16 +2,31 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Any
+import aiohttp
 
-import polars as pl
 
 from .collector import (
     TradingViewFundamentalsDataCollector,
     TradingViewSeriesDataCollector,
 )
+from .const import BASE_NEWS_MEDIATOR_URL, USER_AGENTS
 from .enums import Interval, MessageType
 from .exceptions import TrdvException
-from .models import Symbol, QuoteData
+from .models import (
+    Symbol,
+    QuoteData,
+    NewsResponse,
+    MarketType,
+    CorpActivity,
+    SecFilings,
+    Crypto,
+    Economics,
+    Region,
+    Provider,
+    Priority,
+    Sentiment,
+)
 from .session import Session
 from .utils import generate_session_id
 from .websocket import WebSocketClient
@@ -33,6 +48,7 @@ class TradingViewClient:
     _SERIES_ID_PREFIX = "sds"
     _INTERNAL_SYMBOL_ID = "symbol_1"
     _INTERNAL_SERIES_NAME = "s1"
+    _SYMBOL_REGEX = re.compile(r"^[A-Z_]+:[A-Z_]+$")
 
     def __init__(self, session: Session | None = None):
         self._session = session or Session()
@@ -72,13 +88,13 @@ class TradingViewClient:
         )
         self._quote_session_id = generate_session_id(self._QUOTE_SESSION_PREFIX)
         await self._ws.quote_create_session(self._quote_session_id)
-        self._qs_snapshot_id = generate_session_id(self._QS_SNAPSHOT_PREFIX)
-        await self._ws.snapshoter_create_session(self._qs_snapshot_id)
+        # self._qs_snapshot_id = generate_session_id(self._QS_SNAPSHOT_PREFIX)
+        # await self._ws.snapshoter_create_session(self._qs_snapshot_id)
 
         logger.info("Handshake complete.")
 
+    @staticmethod
     def _validate_parameters(
-        self,
         symbol: str,
         interval: Interval,
         n_bars: int | None,
@@ -86,7 +102,7 @@ class TradingViewClient:
         end_time: datetime | None,
     ) -> None:
         """Validates input parameters to prevent basic errors."""
-        if not re.match(r"^[A-Z_]+:[A-Z_]+$", symbol):
+        if not TradingViewClient._SYMBOL_REGEX.match(symbol):
             raise TrdvException(
                 "Symbol must be in the format 'EXCHANGE:SYMBOL', e.g., 'NASDAQ:AAPL'."
             )
@@ -101,15 +117,51 @@ class TradingViewClient:
         if start_time and end_time and start_time >= end_time:
             raise TrdvException("'start_time' must be before 'end_time'.")
 
+    @staticmethod
+    def _convert_date(date: str | None) -> datetime | None:
+        if date is None:
+            return None
+        if isinstance(date, datetime):
+            return date
+        try:
+            return datetime.fromisoformat(date).astimezone(timezone.utc)
+        except ValueError as e:
+            raise TrdvException(
+                "'start_time' and 'end_time' must be datetime objects or ISO format strings."
+            ) from e
+
+    def _prepare_and_validate_args(
+        self,
+        symbol: str,
+        interval: Interval,
+        n_bars: int | None,
+        start_time: datetime | str | None,
+        end_time: datetime | str | None,
+    ) -> tuple[str, int, datetime | None, datetime]:
+        """Normalizes, defaults, and validates all user-provided arguments."""
+        symbol = symbol.strip().upper()
+        final_end_time = (
+            self._convert_date(end_time)
+            if end_time is not None
+            else datetime.now(timezone.utc)
+        )
+        final_start_time = self._convert_date(start_time)
+        final_n_bars = n_bars or 10
+        self._validate_parameters(
+            symbol, interval, final_n_bars, final_start_time, final_end_time
+        )
+
+        return symbol, final_n_bars, final_start_time, final_end_time
+
     # --- Historical Data Fetching ---
     async def get_history(
         self,
         symbol: str,
         interval: Interval,
         n_bars: int | None = None,
-        start_time: datetime | None = None,
-        end_time: datetime | None = None,
-    ) -> pl.DataFrame:
+        start_time: datetime | str | None = None,
+        end_time: datetime | str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Fetches historical OHLCV data for a given symbol and interval.
 
@@ -119,7 +171,7 @@ class TradingViewClient:
 
         Args:
             symbol: The symbol to fetch data for (e.g., "NASDAQ:AAPL").
-            interval: The time interval for the bars (e.g., Interval.in_1_hour).
+            interval: The time interval for the bars (e.g., Interval.DAY).
             n_bars: The number of recent bars to fetch. Defaults to 10.
             start_time: The start of the historical date range.
             end_time: The end of the historical date range. Defaults to now.
@@ -132,11 +184,9 @@ class TradingViewClient:
                 "Client is not connected. Use 'async with' context manager."
             )
 
-        # Set default values
-        n_bars = n_bars or 10
-        end_time = end_time or datetime.now(timezone.utc)
-        symbol = symbol.strip().upper()
-        self._validate_parameters(symbol, interval, n_bars, start_time, end_time)
+        symbol, n_bars, start_time, end_time = self._prepare_and_validate_args(
+            symbol, interval, n_bars, start_time, end_time
+        )
 
         logger.info(f"Fetching history for {symbol} on interval {interval.value}...")
 
@@ -167,7 +217,7 @@ class TradingViewClient:
         logger.info(
             f"Total received {len(collector.all_series_data)} data points for {symbol}."
         )
-        return collector.to_polars(start_time, end_time)
+        return [item["v"] for item in collector.all_series_data]
 
     async def _process_messages_for_history(
         self,
@@ -343,14 +393,14 @@ class TradingViewClient:
                 self._quote_session_id,
                 symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
             )
-            await self._ws.quote_add_symbols(
-                self._qs_snapshot_id,
-                symbols_str=symbol,
-            )
-            await self._ws.quote_fast_symbols(
-                self._quote_session_id,
-                symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
-            )
+            # await self._ws.quote_add_symbols(
+            #     self._qs_snapshot_id,
+            #     symbols_str=symbol,
+            # )
+            # await self._ws.quote_fast_symbols(
+            #     self._quote_session_id,
+            #     symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
+            # )
 
             async_iter = self._ws._process_messages()
             while True:
@@ -418,3 +468,126 @@ class TradingViewClient:
             except StopAsyncIteration:
                 logger.info("Message stream ended before fundamentals were received.")
                 break
+
+    # --- News ---
+    @staticmethod
+    def prep_filters(
+        symbol: str | None = None,
+        market_type: MarketType | str | None = None,
+        region: Region | str | None = None,
+        corp_activity: CorpActivity | str | None = None,
+        crypto: Crypto | str | None = None,
+        economic_category: Economics | str | None = None,
+        priority: Priority | str | None = None,
+        provider: Provider | str | None = None,
+        sec_filings: SecFilings | str | None = None,
+        sentiment: Sentiment | str | None = None,
+    ) -> list[tuple[str, str]]:
+        if symbol and not TradingViewClient._SYMBOL_REGEX.match(symbol):
+            raise TrdvException(
+                "Symbol must be in the format 'EXCHANGE:SYMBOL', e.g., 'NASDAQ:AAPL'."
+            )
+
+        enum_mapping = {
+            "market": (market_type, MarketType),
+            "area": (region, Region),
+            "corp_activity": (corp_activity, CorpActivity),
+            "crypto": (crypto, Crypto),
+            "economic_category": (economic_category, Economics),
+            "priority": (priority, Priority),
+            "provider": (provider, Provider),
+            "sec_filings": (sec_filings, SecFilings),
+            "sentiment": (sentiment, Sentiment),
+        }
+
+        filters = {"lang": "en"}
+        if symbol:
+            filters["symbol"] = symbol
+
+        for key, (value, enum_class) in enum_mapping.items():
+            if value is None:
+                continue
+
+            try:
+                enum_member = enum_class(value)
+                filters[key] = enum_member.value
+            except ValueError:
+                valid_options = ", ".join([e.value for e in enum_class])
+                raise TrdvException(
+                    f"Invalid {key}: '{value}'. Valid options: {valid_options}"
+                )
+        return sorted([("filter", f"{k}:{v}") for k, v in filters.items()])
+
+    async def get_news(
+        self,
+        symbol: str | None = None,
+        market_type: MarketType | str | None = None,
+        region: Region | str | None = None,
+        corp_activity: CorpActivity | str | None = None,
+        crypto: Crypto | str | None = None,
+        economic_category: Economics | str | None = None,
+        priority: Priority | str | None = None,
+        provider: Provider | str | None = None,
+        sec_filings: SecFilings | str | None = None,
+        sentiment: Sentiment | str | None = None,
+        streaming: bool = False,
+    ) -> NewsResponse:
+        """
+        Fetches news articles from TradingView's news API with optional filtering.
+
+        Args:
+            symbol: Filter news by a specific symbol (format: "EXCHANGE:SYMBOL").
+            market_type: Filter by market type (e.g., MarketType.STOCKS).
+            region: Filter by geographical region (e.g., Region.NORTH_AMERICA).
+            corp_activity: Filter by corporate activities (e.g., CorpActivity.EARNINGS).
+            crypto: Filter by cryptocurrency topics (e.g., Crypto.EXCHANGES).
+            economic_category: Filter by economic categories (e.g., Economics.GDP).
+            priority: Filter by news priority (e.g., Priority.TOP_STORIES).
+            provider: Filter by news provider (e.g., Provider.REUTERS).
+            sec_filings: Filter by SEC filing types (e.g., SecFilings.FORM_10K).
+            sentiment: Filter by sentiment (e.g., Sentiment.POSITIVE).
+            streaming: If True, fetches streaming news updates.
+
+        Returns:
+            A NewsResponse object containing the fetched news articles.
+
+        Raises:
+            TrdvException: If the request fails or the response cannot be parsed.
+            ValueError: If the response data is invalid.
+        """
+        params = [("client", "web"), ("streaming", "true" if streaming else "false")]
+        params.extend(
+            self.prep_filters(
+                symbol=symbol,
+                market_type=market_type,
+                region=region,
+                corp_activity=corp_activity,
+                crypto=crypto,
+                economic_category=economic_category,
+                priority=priority,
+                provider=provider,
+                sec_filings=sec_filings,
+                sentiment=sentiment,
+            )
+        )
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    BASE_NEWS_MEDIATOR_URL,
+                    params=params,
+                    headers={
+                        "User-Agent": USER_AGENTS["chrome"][0],
+                        "Accept": "*/*",
+                        "Accept-Encoding": "gzip, deflate, br, zstd",
+                    },
+                    timeout=10,
+                ) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    return NewsResponse(**data)
+
+        except aiohttp.ClientError as e:
+            raise TrdvException(f"Failed to fetch news: {e}") from e
+        except (ValueError, TypeError) as e:
+            raise TrdvException(f"Failed to parse JSON response: {e}") from e
