@@ -28,6 +28,7 @@ class Session:
         self._authenticated = False
         self._headers = {
             "User-Agent": USER_AGENTS["chrome"][0],
+            "Content-Type": "application/x-www-form-urlencoded",
             "Referer": "https://www.tradingview.com/",
             "Origin": "https://www.tradingview.com",
         }

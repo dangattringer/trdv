@@ -2,6 +2,7 @@ TRADINGVIEW_BASE_URL = "https://www.tradingview.com"
 TRADINGVIEW_LOGIN_URL = f"{TRADINGVIEW_BASE_URL}/accounts/signin/"
 TRADINGVIEW_DATA_URL = "https://data.tradingview.com"
 TRADINGVIEW_CHART_URL = f"{TRADINGVIEW_BASE_URL}/chart/"
+BASE_NEWS_MEDIATOR_URL = "https://news-mediator.tradingview.com/news-flow/v2/news"
 USER_AGENTS = {
     "chrome": [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
@@ -20,3 +21,54 @@ USER_AGENTS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/131.0.2903.86",
     ],
 }
+# TODO: copied from https://github.com/bitbytelabio/tradingview-rs/blob/main/src/quote/mod.rs
+ALL_QUOTE_FIELDS = [
+    "lp",
+    "lp_time",
+    "ask",
+    "bid",
+    "bid_size",
+    "ask_size",
+    "ch",
+    "chp",
+    "volume",
+    "high_price",
+    "low_price",
+    "open_price",
+    "prev_close_price",
+    "currency_id",
+    "current_session",
+    "description",
+    "exchange",
+    "format",
+    "fractional",
+    "is_tradable",
+    "language",
+    "local_description",
+    "logoid",
+    "minmov",
+    "minmove2",
+    "original_name",
+    "pricescale",
+    "pro_name",
+    "short_name",
+    "type",
+    "update_mode",
+    "fundamentals",
+    "rch",
+    "rchp",
+    "rtc",
+    "rtc_time",
+    "status",
+    "industry",
+    "basic_eps_net_income",
+    "beta_1_year",
+    "market_cap_basic",
+    "earnings_per_share_basic_ttm",
+    "price_earnings_ttm",
+    "sector",
+    "dividends_yield",
+    "timezone",
+    "country",
+    "provider_id",
+]

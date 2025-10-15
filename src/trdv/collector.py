@@ -55,23 +55,16 @@ class TradingViewSeriesDataCollector:
             logger.info(
                 f"Converting {len(self.all_series_data)} data points to DataFrame for '{self.symbol}'"
             )
-
-            df = pl.from_records(self.all_series_data)
-            df = df.select(
-                pl.col("v").list.get(0).alias("timestamp"),
-                pl.col("v").list.get(1).alias("open"),
-                pl.col("v").list.get(2).alias("high"),
-                pl.col("v").list.get(3).alias("low"),
-                pl.col("v").list.get(4).alias("close"),
-                pl.col("v").list.get(5).alias("volume"),
-            )
-            df = df.with_columns(
-                pl.from_epoch(pl.col("timestamp"), time_unit="s").dt.replace_time_zone(
-                    "UTC"
+            data = [item["v"] for item in self.all_series_data]
+            df = (
+                pl.DataFrame(data, schema=list(self._SCHEMA.keys()))
+                .with_columns(
+                    pl.from_epoch(pl.col("timestamp"), time_unit="s").cast(
+                        pl.Datetime(time_zone="UTC")
+                    ),
                 )
+                .sort("timestamp")
             )
-
-            df = df.select([pl.col(c).cast(t) for c, t in self._SCHEMA.items()])
 
             if start_time and end_time:
                 start_utc = (
