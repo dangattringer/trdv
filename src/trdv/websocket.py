@@ -1,19 +1,19 @@
 import asyncio
-from datetime import datetime
 import json
-import re
 import logging
+import re
+from datetime import datetime
 from typing import AsyncGenerator
 
 import websockets
 from websockets.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from .const import TRADINGVIEW_DATA_URL
+from .enums import Interval, MessageType
+from .exceptions import TrdvException, WebSocketTimeoutError
 from .session import Session
 from .utils import format_message
-from .exceptions import TrdvException, WebSocketTimeoutError
-from .enums import MessageType, Interval
-from .const import TRADINGVIEW_DATA_URL
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class WebSocketClient:
 
         try:
             msg_type = (
-                str(message_type)
+                message_type.value
                 if isinstance(message_type, MessageType)
                 else message_type
             )
@@ -160,46 +160,62 @@ class WebSocketClient:
         ]
         await self.send_message(MessageType.MODIFY_SERIES, payload)
 
-    async def quote_create_session(self, session_id: str):
-        """Convenience method for creating quote session using enum."""
+    async def _create_session_with_fields(
+        self, session_id: str, fields: list[str] | None = None
+    ):
+        """Create a quote session and optionally set fields."""
         await self.send_message(MessageType.QUOTE_CREATE_SESSION, [session_id])
+        if fields:
+            await self.send_message(MessageType.QUOTE_SET_FIELDS, [session_id] + fields)
 
-    async def snapshoter_create_session(self, session_id: str):
+    async def create_quote_session(self, session_id: str):
         """Convenience method for creating quote session using enum."""
-        await self.send_message(MessageType.QUOTE_CREATE_SESSION, [session_id])
-        await self.send_message(
-            MessageType.QUOTE_SET_FIELDS,
-            [
-                session_id,
-                "pro_name",
-                "base_name",
-                "short_name",
-                "description",
-                "type",
-                "exchange",
-                "typespecs",
-                "listed_exchange",
-                "lp",
-                "country_code",
-                "provider_id",
-                "symbol-primaryname",
-                "logoid",
-                "base-currency-logoid",
-                "currency-logoid",
-                "source-logoid",
-                "update_mode",
-                "pro_perm",
-                "source",
-                "source2",
-                "pricescale",
-                "minmov",
-                "fractional",
-                "visible-plots-set",
-                "local_description",
-                "language",
-                "underlying-symbol",
-            ],
-        )
+        await self._create_session_with_fields(session_id)
+
+    async def create_snapshoter_session(self, session_id: str):
+        """Convenience method for creating quote session using enum."""
+        fields = [
+            "base-currency-logoid",
+            "base_name",
+            "country_code",
+            "currency-logoid",
+            "description",
+            "exchange",
+            "fractional",
+            "language",
+            "listed_exchange",
+            "local_description",
+            "logoid",
+            "lp",
+            "minmov",
+            "options-info",
+            "pricescale",
+            "pro_name",
+            "pro_perm",
+            "provider_id",
+            "short_name",
+            "source",
+            "source-logoid",
+            "source2",
+            "symbol-primaryname",
+            "type",
+            "typespecs",
+            "underlying-symbol",
+            "update_mode",
+            "visible-plots-set",
+        ]
+
+        await self._create_session_with_fields(session_id, fields)
+
+    async def create_option_session(self, session_id: str):
+        """Convenience method for creating quote session using enum."""
+        fields = [
+            "country_code",
+            "lp",
+            "options-info",
+            "pro_name",
+        ]
+        await self._create_session_with_fields(session_id, fields)
 
     async def quote_add_symbols(self, session_id: str, symbols_str: str):
         """Convenience method for adding symbols to quote session using enum."""
@@ -264,7 +280,7 @@ class WebSocketClient:
                 except ConnectionClosed:
                     logger.warning("WebSocket connection was closed.")
                     self._closed = True
-                    break
+                    return
 
                 if re.match(r"~h~\d+", buffer):
                     buffer = await self._handle_keepalive(buffer)

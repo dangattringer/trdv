@@ -1,6 +1,6 @@
 # trdv
 
-A simple package to interact with [TradingView](https://www.tradingview.com/).
+A simple package to interact with [TradingView](https://www.tradingview.com/)
 
 ## Features
 
@@ -38,8 +38,8 @@ import trdv
 
 ## License
 
-MIT
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Disclaimer
 
-This project is not affiliated with, endorsed, or supported by TradingView. Use at your own risk and ensure compliance with TradingView’s terms of service.
+This project is not affiliated with, endorsed, or supported by TradingView. It is provided for educational purposes only. Use at your own risk, and ensure compliance with [TradingView’s Terms of Service](https://www.tradingview.com/policies/).

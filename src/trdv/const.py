@@ -3,6 +3,7 @@ TRADINGVIEW_LOGIN_URL = f"{TRADINGVIEW_BASE_URL}/accounts/signin/"
 TRADINGVIEW_DATA_URL = "https://data.tradingview.com"
 TRADINGVIEW_CHART_URL = f"{TRADINGVIEW_BASE_URL}/chart/"
 BASE_NEWS_MEDIATOR_URL = "https://news-mediator.tradingview.com/news-flow/v2/news"
+OPTIONS_URL = "https://scanner.tradingview.com/options/scan2"
 USER_AGENTS = {
     "chrome": [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
@@ -21,6 +22,25 @@ USER_AGENTS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/131.0.2903.86",
     ],
 }
+OPTIONS_DEFAULT_COLUMNS = [
+    "ask",
+    "bid",
+    "currency",
+    "delta",
+    "expiration",
+    "gamma",
+    "iv",
+    "option-type",
+    "pricescale",
+    "rho",
+    "root",
+    "strike",
+    "theoPrice",
+    "theta",
+    "vega",
+    "bid_iv",
+    "ask_iv",
+]
 # TODO: copied from https://github.com/bitbytelabio/tradingview-rs/blob/main/src/quote/mod.rs
 ALL_QUOTE_FIELDS = [
     "lp",
