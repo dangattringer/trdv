@@ -1,37 +1,50 @@
 import asyncio
+import json
 import logging
+import random
 import re
 from datetime import datetime, timezone
-from typing import Any
-import aiohttp
+from typing import Any, Callable, TypeVar
 
+import aiohttp
 
 from .collector import (
     TradingViewFundamentalsDataCollector,
     TradingViewSeriesDataCollector,
 )
-from .const import BASE_NEWS_MEDIATOR_URL, USER_AGENTS
+from .const import (
+    BASE_NEWS_MEDIATOR_URL,
+    OPTIONS_DEFAULT_COLUMNS,
+    OPTIONS_URL,
+    USER_AGENTS,
+)
 from .enums import Interval, MessageType
 from .exceptions import TrdvException
 from .models import (
-    Symbol,
-    QuoteData,
-    NewsResponse,
-    MarketType,
     CorpActivity,
-    SecFilings,
     Crypto,
     Economics,
-    Region,
-    Provider,
+    HistoricalDataResponse,
+    MarketType,
+    NewsResponse,
+    OHLCData,
+    OptionChain,
+    OptionsInfoResponse,
     Priority,
+    Provider,
+    QuoteData,
+    Region,
+    SecFilings,
     Sentiment,
+    Symbol,
 )
 from .session import Session
 from .utils import generate_session_id
 from .websocket import WebSocketClient
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class TradingViewClient:
@@ -44,18 +57,19 @@ class TradingViewClient:
     _GUEST_AUTH_TOKEN = "unauthorized_user_token"
     _CHART_SESSION_PREFIX = "cs"
     _QUOTE_SESSION_PREFIX = "qs_multiplexer_full"
-    _QS_SNAPSHOT_PREFIX = "qs_snapshoter_basic-symbol-quotes_"
+    _QS_OPTION_PREFIX = "qs_snapshoter_options-product_"
     _SERIES_ID_PREFIX = "sds"
     _INTERNAL_SYMBOL_ID = "symbol_1"
     _INTERNAL_SERIES_NAME = "s1"
-    _SYMBOL_REGEX = re.compile(r"^[A-Z_]+:[A-Z_]+$")
+    _SYMBOL_PATTERN = re.compile(r"^[A-Z_]+:[A-Z_]+$")
+    _DATE_PATTERN = re.compile(r"^\d{8}$")
 
     def __init__(self, session: Session | None = None):
         self._session = session or Session()
         self._ws: WebSocketClient | None = None
         self._chart_session_id: str | None = None
         self._quote_session_id: str | None = None
-        self._qs_snapshot_id: str | None = None
+        self._qs_option_id: str | None = None
         self._active_collectors: dict[str, TradingViewSeriesDataCollector] = {}
 
     async def __aenter__(self):
@@ -87,9 +101,9 @@ class TradingViewClient:
             MessageType.CHART_CREATE_SESSION.value, [self._chart_session_id]
         )
         self._quote_session_id = generate_session_id(self._QUOTE_SESSION_PREFIX)
-        await self._ws.quote_create_session(self._quote_session_id)
-        # self._qs_snapshot_id = generate_session_id(self._QS_SNAPSHOT_PREFIX)
-        # await self._ws.snapshoter_create_session(self._qs_snapshot_id)
+        await self._ws.create_quote_session(self._quote_session_id)
+        self._qs_option_id = generate_session_id(self._QS_OPTION_PREFIX)
+        await self._ws.create_option_session(self._qs_option_id)
 
         logger.info("Handshake complete.")
 
@@ -102,7 +116,7 @@ class TradingViewClient:
         end_time: datetime | None,
     ) -> None:
         """Validates input parameters to prevent basic errors."""
-        if not TradingViewClient._SYMBOL_REGEX.match(symbol):
+        if not TradingViewClient._SYMBOL_PATTERN.match(symbol):
             raise TrdvException(
                 "Symbol must be in the format 'EXCHANGE:SYMBOL', e.g., 'NASDAQ:AAPL'."
             )
@@ -118,17 +132,27 @@ class TradingViewClient:
             raise TrdvException("'start_time' must be before 'end_time'.")
 
     @staticmethod
-    def _convert_date(date: str | None) -> datetime | None:
+    def _convert_date(date: str | datetime | None) -> datetime | None:
         if date is None:
             return None
         if isinstance(date, datetime):
-            return date
+            return (
+                date.astimezone(timezone.utc)
+                if date.tzinfo
+                else date.replace(tzinfo=timezone.utc)
+            )
         try:
             return datetime.fromisoformat(date).astimezone(timezone.utc)
         except ValueError as e:
             raise TrdvException(
                 "'start_time' and 'end_time' must be datetime objects or ISO format strings."
             ) from e
+
+    @staticmethod
+    def _get_user_agent() -> str:
+        """Get user agent from session or default."""
+        browser = random.choice(list(USER_AGENTS.keys()))
+        return random.choice(USER_AGENTS[browser])
 
     def _prepare_and_validate_args(
         self,
@@ -161,7 +185,7 @@ class TradingViewClient:
         n_bars: int | None = None,
         start_time: datetime | str | None = None,
         end_time: datetime | str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> HistoricalDataResponse:
         """
         Fetches historical OHLCV data for a given symbol and interval.
 
@@ -177,7 +201,7 @@ class TradingViewClient:
             end_time: The end of the historical date range. Defaults to now.
 
         Returns:
-            A Polars DataFrame containing the OHLCV data.
+            HistoricalDataResponse: The historical OHLCV data.
         """
         if not self._ws or not self._chart_session_id:
             raise TrdvException(
@@ -194,30 +218,33 @@ class TradingViewClient:
         collector = TradingViewSeriesDataCollector(series_id, symbol, interval)
         self._active_collectors[series_id] = collector
 
+        await self._ws.resolve_symbol(
+            self._chart_session_id,
+            symbol=symbol,
+            symbol_id=self._INTERNAL_SYMBOL_ID,
+        )
+        await self._ws.create_series(
+            self._chart_session_id,
+            series_id,
+            self._INTERNAL_SERIES_NAME,
+            self._INTERNAL_SYMBOL_ID,
+            str(interval),
+            n_bars,
+        )
         try:
-            await self._ws.resolve_symbol(
-                self._chart_session_id,
-                symbol=symbol,
-                symbol_id=self._INTERNAL_SYMBOL_ID,
-            )
-            await self._ws.create_series(
-                self._chart_session_id,
-                series_id,
-                self._INTERNAL_SERIES_NAME,
-                self._INTERNAL_SYMBOL_ID,
-                str(interval),
-                n_bars,
-            )
-
             await self._process_messages_for_history(collector, start_time, end_time)
-
         finally:
             self._active_collectors.pop(series_id, None)
 
         logger.info(
             f"Total received {len(collector.all_series_data)} data points for {symbol}."
         )
-        return [item["v"] for item in collector.all_series_data]
+        return HistoricalDataResponse(
+            data=[
+                OHLCData.from_raw(d)
+                for d in sorted(collector.all_series_data, key=lambda x: x["i"])
+            ]
+        )
 
     async def _process_messages_for_history(
         self,
@@ -226,29 +253,14 @@ class TradingViewClient:
         end_time: datetime | None = None,
     ):
         """Main message processing loop for a get_history request."""
-        async_iter = self._ws._process_messages()
 
-        while True:
-            try:
-                message = await asyncio.wait_for(
-                    async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
-                )
+        async def handler(message: dict) -> bool | None:
+            should_break = await self._handle_history_message(
+                message, collector, start_time, end_time
+            )
+            return True if should_break else None
 
-                should_break = await self._handle_history_message(
-                    message, collector, start_time, end_time
-                )
-
-                if should_break:
-                    break
-
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"Timed out waiting for message for {collector.symbol}. Aborting."
-                )
-                break
-            except StopAsyncIteration:
-                logger.info("Message stream ended.")
-                break
+        await self._process_messages_until(handler)
 
     async def _handle_history_message(
         self,
@@ -318,6 +330,52 @@ class TradingViewClient:
         return False
 
     # --- Symbol Data ---
+    async def _process_messages_until(
+        self,
+        handler: Callable[[dict], Any],
+        timeout: float | None = None,
+        raise_on_timeout: bool = False,
+    ) -> T | None:
+        """
+        Generic message processing loop with timeout.
+
+        Args:
+            handler: Callable that processes each message. Return non-None to stop.
+            timeout: Timeout in seconds per message.
+            raise_on_timeout: If True, raises TrdvException on timeout instead of returning None.
+
+        Returns:
+            The non-None value returned by handler, or None on timeout/stream end.
+        """
+        timeout = timeout or self._DEFAULT_TIMEOUT
+        async_iter = self._ws._process_messages()
+
+        try:
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        async_iter.__anext__(), timeout=timeout
+                    )
+                    logger.debug(f"RECEIVED: {message}")
+
+                    result = handler(message)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+
+                    if result is not None:
+                        return result
+
+                except asyncio.TimeoutError:
+                    if raise_on_timeout:
+                        raise TrdvException("Timed out waiting for message") from None
+                    logger.error("Timed out waiting for message.")
+                    return None
+                except StopAsyncIteration:
+                    logger.info("Message stream ended.")
+                    return None
+        finally:
+            await async_iter.aclose()
+
     async def get_symbol_info(self, symbol: str) -> Symbol | None:
         """
         Fetch detailed information for a single symbol.
@@ -337,46 +395,27 @@ class TradingViewClient:
 
         logger.info(f"Fetching symbol info for {symbol}...")
 
-        try:
-            await self._ws.resolve_symbol(
-                self._chart_session_id,
-                symbol=symbol,
-                symbol_id=self._INTERNAL_SYMBOL_ID,
-            )
+        await self._ws.resolve_symbol(
+            self._chart_session_id,
+            symbol=symbol,
+            symbol_id=self._INTERNAL_SYMBOL_ID,
+        )
 
-            async_iter = self._ws._process_messages()
-            while True:
-                try:
-                    message = await asyncio.wait_for(
-                        async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
-                    )
-                    logger.debug(f"RECEIVED: {message}")
+        async def handler(message: dict) -> Symbol | None:
+            msg_type = message.get("m")
 
-                    msg_type = message.get("m")
+            if msg_type == MessageType.SYMBOL_RESOLVED.value:
+                symbol_info = message.get("p", [None, None, None])[2]
+                logger.info(f"Successfully resolved symbol info for {symbol}.")
+                return Symbol(**symbol_info)
 
-                    if msg_type == MessageType.SYMBOL_RESOLVED.value:
-                        symbol_info = message.get("p", [None, None, None])[2]
-                        logger.info(f"Successfully resolved symbol info for {symbol}.")
-                        return Symbol.model_validate(symbol_info)
+            if msg_type == MessageType.PROTOCOL_ERROR.value:
+                error_msg = message.get("p", ["Unknown error"])[0]
+                raise TrdvException(f"Protocol error from server: {error_msg}")
 
-                    if msg_type == MessageType.PROTOCOL_ERROR.value:
-                        error_msg = message.get("p", ["Unknown error"])[0]
-                        raise TrdvException(f"Protocol error from server: {error_msg}")
-
-                except asyncio.TimeoutError:
-                    logger.error(
-                        f"Timed out waiting for symbol info for {symbol}. Aborting."
-                    )
-                    return None
-                except StopAsyncIteration:
-                    logger.info("Message stream ended before symbol info was received.")
-                    return None
-
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred while fetching symbol info for {symbol}: {e}"
-            )
             return None
+
+        return await self._process_messages_until(handler)
 
     # --- Fundamental Data ---
     async def get_fundamentals(self, symbol: str) -> QuoteData | None:
@@ -388,90 +427,45 @@ class TradingViewClient:
         logger.info(f"Fetching fundamental data for {symbol}...")
         collector = TradingViewFundamentalsDataCollector(symbol)
 
-        try:
-            await self._ws.quote_add_symbols(
-                self._quote_session_id,
-                symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
-            )
-            # await self._ws.quote_add_symbols(
-            #     self._qs_snapshot_id,
-            #     symbols_str=symbol,
-            # )
-            # await self._ws.quote_fast_symbols(
-            #     self._quote_session_id,
-            #     symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
-            # )
+        await self._ws.quote_add_symbols(
+            self._quote_session_id,
+            symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
+        )
 
-            async_iter = self._ws._process_messages()
-            while True:
-                try:
-                    message = await asyncio.wait_for(
-                        async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
-                    )
-                    logger.debug(f"RECEIVED: {message}")
+        # await self._ws.quote_add_symbols(
+        #     self._qs_snapshot_id,
+        #     symbols_str=symbol,
+        # )
+        # await self._ws.quote_fast_symbols(
+        #     self._quote_session_id,
+        #     symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
+        # )
+        async def handler(message: dict) -> QuoteData | None:
+            msg_type = message.get("m")
+            payload = message.get("p", [])
 
-                    should_break = await self._process_messages_for_fundamentals(
-                        collector
-                    )
-                    if should_break:
-                        return QuoteData.model_validate(collector.fundamentals_data)
+            if (
+                msg_type == MessageType.QUOTE_SERIES_DATA.value
+                and payload[0] == self._quote_session_id
+            ):
+                data = payload[1].get("v", {})
+                collector.add_data(data)
+                return None
 
-                except asyncio.TimeoutError:
-                    logger.error(
-                        f"Timed out waiting for symbol info for {symbol}. Aborting."
-                    )
-                    return None
-                except StopAsyncIteration:
-                    logger.info("Message stream ended before symbol info was received.")
-                    return None
+            if (
+                msg_type == MessageType.QUOTE_COMPLETED.value
+                and payload[0] == self._quote_session_id
+            ):
+                logger.info(f"Fundamental data for {symbol} received.")
+                return QuoteData(**collector.fundamentals_data)
 
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred while fetching symbol info for {symbol}: {e}"
-            )
             return None
 
-    async def _process_messages_for_fundamentals(
-        self, collector: TradingViewFundamentalsDataCollector
-    ) -> bool:
-        """Main message processing loop for a get_fundamentals request."""
-        async_iter = self._ws._process_messages()
-        while True:
-            try:
-                message = await asyncio.wait_for(
-                    async_iter.__anext__(), timeout=self._DEFAULT_TIMEOUT
-                )
-                logger.debug(f"RECEIVED: {message}")
-
-                msg_type = message.get("m")
-                payload = message.get("p", [])
-
-                if (
-                    msg_type == MessageType.QUOTE_SERIES_DATA.value
-                    and payload[0] == self._quote_session_id
-                ):
-                    data = payload[1].get("v", {})
-                    collector.add_data(data)
-
-                elif (
-                    msg_type == MessageType.QUOTE_COMPLETED.value
-                    and payload[0] == self._quote_session_id
-                ):
-                    logger.info(f"Fundamental data for {collector.symbol} received.")
-                    return True
-
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"Timed out waiting for fundamentals for {collector.symbol}."
-                )
-                break
-            except StopAsyncIteration:
-                logger.info("Message stream ended before fundamentals were received.")
-                break
+        return await self._process_messages_until(handler)
 
     # --- News ---
     @staticmethod
-    def prep_filters(
+    def _prepare_news_filters(
         symbol: str | None = None,
         market_type: MarketType | str | None = None,
         region: Region | str | None = None,
@@ -483,7 +477,7 @@ class TradingViewClient:
         sec_filings: SecFilings | str | None = None,
         sentiment: Sentiment | str | None = None,
     ) -> list[tuple[str, str]]:
-        if symbol and not TradingViewClient._SYMBOL_REGEX.match(symbol):
+        if symbol and not TradingViewClient._SYMBOL_PATTERN.match(symbol):
             raise TrdvException(
                 "Symbol must be in the format 'EXCHANGE:SYMBOL', e.g., 'NASDAQ:AAPL'."
             )
@@ -557,7 +551,7 @@ class TradingViewClient:
         """
         params = [("client", "web"), ("streaming", "true" if streaming else "false")]
         params.extend(
-            self.prep_filters(
+            self._prepare_news_filters(
                 symbol=symbol,
                 market_type=market_type,
                 region=region,
@@ -577,7 +571,7 @@ class TradingViewClient:
                     BASE_NEWS_MEDIATOR_URL,
                     params=params,
                     headers={
-                        "User-Agent": USER_AGENTS["chrome"][0],
+                        "User-Agent": self._get_user_agent(),
                         "Accept": "*/*",
                         "Accept-Encoding": "gzip, deflate, br, zstd",
                     },
@@ -591,3 +585,125 @@ class TradingViewClient:
             raise TrdvException(f"Failed to fetch news: {e}") from e
         except (ValueError, TypeError) as e:
             raise TrdvException(f"Failed to parse JSON response: {e}") from e
+
+    # --- Options Data ---
+    def _build_request_payload(
+        self,
+        symbol: str,
+        date: int | None,
+    ) -> dict[str, Any]:
+        """Build the request payload for options data."""
+        filters = [{"left": "type", "operation": "equal", "right": "option"}]
+        if date:
+            filters.append({"left": "expiration", "operation": "equal", "right": date})
+
+        return {
+            "columns": OPTIONS_DEFAULT_COLUMNS,
+            "filter": filters,
+            "ignore_unknown_fields": False,
+            "index_filters": [{"name": "underlying_symbol", "values": [symbol]}],
+        }
+
+    async def get_available_options(self, symbol: str) -> OptionsInfoResponse:
+        """Fetches available option expiration dates for a given symbol.
+
+        Args:
+            symbol: The symbol to fetch options data for (e.g., "NASDAQ:AAPL").
+
+        Returns:
+            An OptionInfoResponse object containing the available expiration dates.
+        """
+        collector = []
+        await self._ws.quote_add_symbols(
+            self._qs_option_id,
+            symbols_str=symbol,
+        )
+
+        async def handler(message: dict) -> list[dict] | None:
+            msg_type = message.get("m")
+            payload = message.get("p", [])
+
+            if (
+                msg_type == MessageType.QUOTE_SERIES_DATA.value
+                and payload[0] == self._qs_option_id
+            ):
+                data = payload[1].get("v", {})
+                collector.append(data)
+                logger.debug(f"Options data chunk received: {len(data)} items")
+                return None
+
+            if (
+                msg_type == MessageType.QUOTE_COMPLETED.value
+                and payload[0] == self._qs_option_id
+            ):
+                logger.info(
+                    f"Options data collection complete: {len(collector)} chunks"
+                )
+                return OptionsInfoResponse(**collector[0])
+
+            return None
+
+        return await self._process_messages_until(handler)
+
+    @staticmethod
+    def _validate_date(date: str) -> None:
+        """Validate date format and value."""
+        if not TradingViewClient._DATE_PATTERN.match(date):
+            raise TrdvException(
+                f"Invalid date format: '{date}'. "
+                "Must be 'YYYYMMDD' (e.g., '20251114')"
+            )
+        try:
+            datetime.strptime(date, "%Y%m%d")
+        except ValueError:
+            raise TrdvException(f"Invalid date value: '{date}'")
+
+    async def get_options_data(
+        self, symbol: str, expiration_date: str | None = None
+    ) -> OptionChain:
+        """Fetches options data for a given symbol and expiration date.
+
+
+        Args:
+            symbol: The symbol to fetch options data for (e.g., "NASDAQ:AAPL").
+            expiration_date: The expiration date in 'YYYYMMDD' format. If None, fetches all available expiration dates.
+
+        Returns:
+            An OptionResponse object containing the options data.
+        """
+        if not TradingViewClient._SYMBOL_PATTERN.match(symbol):
+            raise TrdvException(
+                f"Invalid symbol format: '{symbol}'. "
+                "Must be 'EXCHANGE:SYMBOL' (e.g., 'NASDAQ:AAPL')"
+            )
+        if expiration_date:
+            available_options = await self.get_available_options(symbol)
+            available_dates = [exp.exp for exp in available_options.series]
+
+            self._validate_date(expiration_date)
+            expiration_date = int(expiration_date)
+            if expiration_date not in available_dates:
+                raise TrdvException(
+                    f"Invalid expiration date: '{expiration_date}'. "
+                    f"Available dates: {available_dates}"
+                )
+
+        data = self._build_request_payload(symbol, expiration_date)
+        params = {"label-product": "options-builder"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                OPTIONS_URL,
+                params=params,
+                data=json.dumps(data),
+                headers={
+                    "User-Agent": self._get_user_agent(),
+                    "Content-Type": "text/plain;charset=UTF-8",
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate, br, zstd",
+                    "Origin": "https://www.tradingview.com",
+                },
+                timeout=10,
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return OptionChain(**data)
