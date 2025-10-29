@@ -24,15 +24,15 @@ from .models import (
     CorpActivity,
     Crypto,
     Economics,
-    HistoricalDataResponse,
+    Fundamentals,
+    HistoricalData,
     MarketType,
-    NewsResponse,
+    News,
     OHLCData,
     OptionChain,
-    OptionsInfoResponse,
+    OptionsInfo,
     Priority,
     Provider,
-    QuoteData,
     Region,
     SecFilings,
     Sentiment,
@@ -185,7 +185,7 @@ class TradingViewClient:
         n_bars: int | None = None,
         start_time: datetime | str | None = None,
         end_time: datetime | str | None = None,
-    ) -> HistoricalDataResponse:
+    ) -> HistoricalData:
         """
         Fetches historical OHLCV data for a given symbol and interval.
 
@@ -239,7 +239,7 @@ class TradingViewClient:
         logger.info(
             f"Total received {len(collector.all_series_data)} data points for {symbol}."
         )
-        return HistoricalDataResponse(
+        return HistoricalData(
             data=[
                 OHLCData.from_raw(d)
                 for d in sorted(collector.all_series_data, key=lambda x: x["i"])
@@ -418,7 +418,18 @@ class TradingViewClient:
         return await self._process_messages_until(handler)
 
     # --- Fundamental Data ---
-    async def get_fundamentals(self, symbol: str) -> QuoteData | None:
+    async def get_fundamentals(self, symbol: str) -> Fundamentals | None:
+        """
+        Fetch fundamental data for a given symbol.
+
+        Args:
+            symbol: The symbol to fetch fundamental data for (e.g., "NASDAQ:AAPL").
+        Returns:
+            A Fundamentals object containing the fundamental data.
+        Raises:
+            TrdvException: If the client is not connected or if an error occurs during data retrieval
+
+        """
         if not self._ws or not self._quote_session_id:
             raise TrdvException(
                 "Client is not connected. Use 'async with' context manager."
@@ -440,7 +451,7 @@ class TradingViewClient:
         #     self._quote_session_id,
         #     symbols_str=f'={{"adjustment":"splits","currency-id":"USD","symbol":"{symbol}"}}',
         # )
-        async def handler(message: dict) -> QuoteData | None:
+        async def handler(message: dict) -> Fundamentals | None:
             msg_type = message.get("m")
             payload = message.get("p", [])
 
@@ -457,7 +468,7 @@ class TradingViewClient:
                 and payload[0] == self._quote_session_id
             ):
                 logger.info(f"Fundamental data for {symbol} received.")
-                return QuoteData(**collector.fundamentals_data)
+                return Fundamentals(**collector.fundamentals_data)
 
             return None
 
@@ -525,7 +536,7 @@ class TradingViewClient:
         sec_filings: SecFilings | str | None = None,
         sentiment: Sentiment | str | None = None,
         streaming: bool = False,
-    ) -> NewsResponse:
+    ) -> News:
         """
         Fetches news articles from TradingView's news API with optional filtering.
 
@@ -579,7 +590,7 @@ class TradingViewClient:
                 ) as response:
                     response.raise_for_status()
                     data = await response.json()
-                    return NewsResponse(**data)
+                    return News(**data)
 
         except aiohttp.ClientError as e:
             raise TrdvException(f"Failed to fetch news: {e}") from e
@@ -604,7 +615,7 @@ class TradingViewClient:
             "index_filters": [{"name": "underlying_symbol", "values": [symbol]}],
         }
 
-    async def get_available_options(self, symbol: str) -> OptionsInfoResponse:
+    async def get_available_options(self, symbol: str) -> OptionsInfo:
         """Fetches available option expiration dates for a given symbol.
 
         Args:
@@ -639,7 +650,7 @@ class TradingViewClient:
                 logger.info(
                     f"Options data collection complete: {len(collector)} chunks"
                 )
-                return OptionsInfoResponse(**collector[0])
+                return OptionsInfo(**collector[0])
 
             return None
 
