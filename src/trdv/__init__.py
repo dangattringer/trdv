@@ -1,6 +1,5 @@
-from .ticker import Ticker
 from .enums import Interval
-
+from .ticker import Ticker
 
 __all__ = ["Ticker", "Interval"]
 

@@ -61,7 +61,7 @@ class Series(BaseModel):
     underlying: str
 
 
-class OptionsInfoResponse(BaseModel):
+class OptionsInfo(BaseModel):
     pro_name: str
     lp: float
     series: list[Series]

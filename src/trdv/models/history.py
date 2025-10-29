@@ -15,5 +15,5 @@ class OHLCData(BaseModel):
         return cls(timestamp=ts, open=o, high=h, low=l, close=c, volume=v)
 
 
-class HistoricalDataResponse(BaseModel):
+class HistoricalData(BaseModel):
     data: list[OHLCData] = Field(..., description="List of OHLC data points")

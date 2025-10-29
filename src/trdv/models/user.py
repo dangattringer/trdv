@@ -1,6 +1,7 @@
-from typing import Any
-from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class NotificationCount(BaseModel):
@@ -75,7 +76,7 @@ class UserModel(BaseModel):
     has_active_email: bool
 
 
-class UserResponse(BaseModel):
+class User(BaseModel):
     """
     Represents the top-level API response for a user request.
     """
@@ -85,7 +86,7 @@ class UserResponse(BaseModel):
     user: UserModel | None = None
 
     @model_validator(mode="after")
-    def check_user_on_success(self) -> "UserResponse":
+    def check_user_on_success(self):
         """Ensure the user object exists if there is no error."""
         # if error is a non-empty string
         # user can be None
