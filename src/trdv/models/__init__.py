@@ -1,27 +1,27 @@
-from .history import HistoricalDataResponse, OHLCData
+from .fundamentals import Fundamentals
+from .history import HistoricalData, OHLCData
 from .news import (
     CorpActivity,
     Crypto,
     Economics,
     MarketType,
-    NewsResponse,
+    News,
     Priority,
     Provider,
     Region,
     SecFilings,
     Sentiment,
 )
-from .options import OptionChain, OptionChainEntry, OptionsInfoResponse
-from .quote import QuoteData
+from .options import OptionChain, OptionChainEntry, OptionsInfo
 from .symbol import Symbol
-from .user import UserModel, UserResponse
+from .user import User, UserModel
 
 __all__ = [
-    "QuoteData",
+    "Fundamentals",
     "Symbol",
     "UserModel",
-    "UserResponse",
-    "NewsResponse",
+    "User",
+    "News",
     "MarketType",
     "CorpActivity",
     "SecFilings",
@@ -33,7 +33,7 @@ __all__ = [
     "Sentiment",
     "OptionChainEntry",
     "OptionChain",
-    "OptionsInfoResponse",
-    "HistoricalDataResponse",
+    "OptionsInfo",
+    "HistoricalData",
     "OHLCData",
 ]

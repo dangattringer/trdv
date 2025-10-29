@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
+
 from pydantic import BaseModel, Field, computed_field
 
 
@@ -30,7 +31,7 @@ class NewsItem(BaseModel):
         return datetime.fromtimestamp(self.published, tz=timezone.utc)
 
 
-class NewsResponse(BaseModel):
+class News(BaseModel):
     news: list[NewsItem] = Field(..., alias="items")
     pagination: dict[str, str] | None = Field(None, alias="pagination")
 

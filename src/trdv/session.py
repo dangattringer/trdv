@@ -1,12 +1,12 @@
 import logging
 
 import aiohttp
-from yarl import URL
 from pydantic import ValidationError
+from yarl import URL
 
-from .const import USER_AGENTS, TRADINGVIEW_LOGIN_URL
+from .const import TRADINGVIEW_LOGIN_URL, USER_AGENTS
 from .exceptions import AuthenticationError, CaptchaRequired
-from .models import UserModel, UserResponse
+from .models import User, UserModel
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class Session:
             "Referer": "https://www.tradingview.com/",
             "Origin": "https://www.tradingview.com",
         }
-        self._user: UserModel | None = None
+        self._user: User | None = None
 
     @property
     def is_authenticated(self) -> bool:
@@ -40,7 +40,7 @@ class Session:
         return self._authenticated
 
     @property
-    def user(self) -> UserModel | None:
+    def user(self) -> User | None:
         """Returns the user information if available."""
         return self._user
 
@@ -82,7 +82,7 @@ class Session:
                 logger.debug(f"Login response data: {data}")
 
                 try:
-                    response_data = UserResponse.model_validate(data)
+                    response_data = UserModel(**data)
                 except ValidationError as e:
                     logger.error(f"Failed to parse API response: {e}")
                     raise AuthenticationError(
